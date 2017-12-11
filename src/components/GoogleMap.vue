@@ -24,6 +24,7 @@
                                     <b-button :pressed.sync="selectedDrawing" v-on:click="show_drawing" variant="primary">Draw shapes</b-button>
                                 </div>
                                 <hr/>
+                                <hr/>
                                 <div class="row">
                                     <b-button :pressed.sync="selectedCircle" v-on:click="show_circle" variant="primary">Draw circle</b-button>
                                     <b-form-input v-model.number="radius"
@@ -33,6 +34,12 @@
                                 <hr/>
                                 <div class="row">
                                     <b-button :disabled="!selectedCircle" v-on:click="show_contains" variant="primary">Contains</b-button>
+                                </div>
+                                <hr/>
+                                <div class="row">
+                                    <b-button :pressed.sync="selectedWithin" v-on:click="show_within" variant="primary">DistanceWithin</b-button>
+                                    <b-form-input placeholder="Point ID" v-model="pointWithin"></b-form-input>
+                                    <b-form-input placeholder="Radius" v-model.number="radiusWithin"></b-form-input>
                                 </div>
                             </b-container>
                         </b-card>
@@ -85,14 +92,33 @@
                             class="text-center">
                         <b-row>
                             <b-col>Id</b-col>
-                            <b-col>Attribute</b-col>
+                            <b-col>user</b-col>
                             <b-col>Latitude</b-col>
                             <b-col>Longitude</b-col>
                             <hr/>
                         </b-row>
                         <b-row v-for="item in contained_markers">
                             <b-col>{{item.id}}</b-col>
-                            <b-col>{{item.title}}</b-col>
+                            <b-col>{{item.user}}</b-col>
+                            <b-col>{{item.lat}}</b-col>
+                            <b-col>{{item.lng}}</b-col>
+                        </b-row>
+                    </b-card>
+
+                    <b-card v-if="selectedWithin" bg-variant="dark"
+                            text-variant="white"
+                            header="Contained points"
+                            class="text-center">
+                        <b-row>
+                            <b-col>Id</b-col>
+                            <b-col>user</b-col>
+                            <b-col>Latitude</b-col>
+                            <b-col>Longitude</b-col>
+                            <hr/>
+                        </b-row>
+                        <b-row v-for="item in markers_within">
+                            <b-col>{{item.id}}</b-col>
+                            <b-col>{{item.user}}</b-col>
                             <b-col>{{item.lat}}</b-col>
                             <b-col>{{item.lng}}</b-col>
                         </b-row>
@@ -126,7 +152,9 @@ export default {
       geodesicBetween: 0,
       selectedDistance: false,
       selectedDrawing: false,
+      selectedPolygon: false,
       selectedCircle: false,
+      selectedWithin: false,
       distance: 0,
       drawingManager: null,
       all_shapes: [],
@@ -138,6 +166,10 @@ export default {
       longitude: -99.133563,
       circle: null,
       radius: null,
+      pointWithin: null,
+      radiusWithin: null,
+      markers_within: [],
+      editablePolygon: null,
       layers : [],
       mapStyle: [
           {
@@ -369,7 +401,7 @@ export default {
         initMap(){
             const element = document.getElementById(this.mapName)
             const options = {
-              zoom: 12,
+              zoom: 5,
               center: {lat: this.lattitud, lng: this.longitude},
               styles: this.mapStyle
             }
@@ -401,7 +433,7 @@ export default {
                     for (var index = 0; index < myJson.data.length; ++index) {
                         var marker = new google.maps.Marker({
                             position: {lat: myJson.data[index].lat, lng: myJson.data[index].lng},
-                            title: myJson.data[index].text,
+                            title: myJson.data[index].user,
                             label: (index+1).toString(),
                             map: vm.map
                         });
@@ -522,6 +554,26 @@ export default {
             }
         },
 
+        show_polygon(){
+            if(this.selectedPolygon){
+                var mapCenter = this.map.getCenter();
+                var mapZoom = this.map.getZoom();
+
+                // Define a rectangle and set its editable property to true.
+                this.editablePolygon = new google.maps.Rectangle({
+                  bounds: new google.maps.LatLngBounds(
+                      new google.maps.LatLng(19.388729, -99.098158),
+                      new google.maps.LatLng(19.431148, -99.045115)
+                  ),
+                  editable: true
+                });
+                this.editablePolygon.setMap(this.map);            
+            }
+            else{
+                        
+            }
+        },
+
         show_circle(){
             if(this.selectedCircle){
                 this.circle = new google.maps.Circle({
@@ -531,7 +583,7 @@ export default {
                     fillColor: '#FF0000',
                     fillOpacity: 0.35,
                     map: this.map,
-                    center: {lat: this.lattitud, lng: this.longitude},
+                    center: this.map.getCenter(),
                     radius: this.radius,
                     draggable: true
                 });
@@ -539,7 +591,36 @@ export default {
             else{
                 this.circle.setMap(null);
                 this.radius = null;
+                this.contained_markers = [];
             }   
+        },
+
+        show_within(){
+            if(this.selectedWithin){
+                var centerMarker = null;
+                for (var i = 0; i < this.markers.length; ++i) {
+                    var label = this.markers[i].getLabel()
+                    if(label === this.pointWithin){
+                        centerMarker = this.markers[i];
+                    }
+                }               
+
+                for (var i = 0; i < this.markers.length; ++i) {
+                    var label = this.markers[i].getLabel()
+                    if(label !== this.pointWithin){
+                        var distance = google.maps.geometry.spherical.computeDistanceBetween(centerMarker.getPosition(), this.markers[i].getPosition()).toFixed(2)
+                        if(distance < this.radiusWithin){
+                            var pos = this.markers[i].getPosition();
+                            this.markers_within.push({"user": this.markers[i].getTitle(), "lat": pos.lat(), "lng": pos.lng(), "id": this.markers[i].getLabel()});
+                        }
+                    }
+                }                
+
+            }
+            else{
+                this.markers_within = [];
+                this.selectedWithin = false;  
+            }
         },
 
         show_contains(){
@@ -550,7 +631,7 @@ export default {
                     if(contained){
                         var lat = this.markers[i].getPosition().lat();
                         var lng = this.markers[i].getPosition().lng();
-                        this.contained_markers.push({"title": this.markers[i].getTitle(), "lat": lat, "lng": lng, "id": this.markers[i].getLabel()});                   
+                        this.contained_markers.push({"user": this.markers[i].getTitle(), "lat": lat, "lng": lng, "id": this.markers[i].getLabel()});                   
                     }
                 }
             }
