@@ -14,6 +14,17 @@
                                 <div class="row">
                                     <b-button :pressed.sync="selectedDrawing" v-on:click="show_drawing" variant="primary">Draw shapes</b-button>
                                 </div>
+                                <hr/>
+                                <div class="row">
+                                    <b-button :pressed.sync="selectedCircle" v-on:click="show_circle" variant="primary">Draw circle</b-button>
+                                    <b-form-input v-model.number="radius"
+                                      type="number"
+                                      placeholder="Radius"></b-form-input>
+                                </div>
+                                <hr/>
+                                <div class="row">
+                                    <b-button :disabled="!selectedCircle" v-on:click="show_contains" variant="primary">Contains</b-button>
+                                </div>
                             </b-container>
                         </b-card>
                     </b-card-group>
@@ -21,7 +32,7 @@
                 <div class="row">
                     <b-list-group>
                         <b-list-group-item v-for="layer in layers">
-                            {{ layer }}
+                            {{ layer.name }}
                         </b-list-group-item>
                     </b-list-group>
                 </div>
@@ -61,6 +72,23 @@
                       Distance: <input type="text" :value="distance" readonly size="30"> meters
                     </div>
 
+                    <b-card v-if="selectedCircle" bg-variant="dark"
+                            text-variant="white"
+                            header="Contained points"
+                            class="text-center">
+                        <b-row>
+                            <b-col>Attribute</b-col>
+                            <b-col>Latitude</b-col>
+                            <b-col>Longitude</b-col>
+                            <hr/>
+                        </b-row>
+                        <b-row v-for="item in contained_markers">
+                            <b-col>{{item.title}}</b-col>
+                            <b-col>{{item.lat}}</b-col>
+                            <b-col>{{item.lng}}</b-col>
+                        </b-row>
+                    </b-card>
+
                 </div>
 
             </div>
@@ -79,17 +107,22 @@ export default {
       map: null,
       bounds: null,
       markers: [],
+      contained_markers: [],
       fileName: '',
       selectedDistance: false,
       selectedDrawing: false,
+      selectedCircle: false,
       distance: 0,
       drawingManager: null,
+      all_shapes: [],
       marker1: null,
       marker2: null,
       poly: null,
       geodesicPoly: null,
       lattitud: 19.433941,
       longitude: -99.133563,
+      circle: null,
+      radius: 1000,
       layers : [],
       mapStyle: [
           {
@@ -328,6 +361,22 @@ export default {
             
             this.map = new google.maps.Map(element, options);
 
+            const vm = this;
+
+            $.ajax({
+              url: 'https://gist.githubusercontent.com/IsaacRodgz/c4882dad5b1e7fe3f4212fc2ef06b744/raw/732ece85c6016fea41301dbf33efa29612b9cb49/points.json',
+              method: 'GET', context: this
+            }).then(function(data) {
+                var myJson = $.parseJSON(data);
+                for (var index = 0; index < myJson.data.length; ++index) {
+                    var marker = new google.maps.Marker({
+                        position: {lat: myJson.data[index].lat, lng: myJson.data[index].lng},
+                        title: myJson.data[index].text,
+                        map: vm.map
+                    });
+                    vm.markers.push(marker);
+                }
+            });
             
         },
 
@@ -342,7 +391,7 @@ export default {
                     map: this.map
                 });
                 this.fileName = '';
-                this.layers.push(dir.split("/").slice(-1)[0]);
+                this.layers.push({"name":dir.split("/").slice(-1)[0]});
             }
         },
 
@@ -394,22 +443,60 @@ export default {
                           position: google.maps.ControlPosition.TOP_CENTER,
                           drawingModes: ['marker', 'circle', 'polygon', 'polyline', 'rectangle']
                         },
-                        markerOptions: {icon: 'https://developers.google.com/maps/documentation/javascript/examples/full/images/beachflag.png'},
-                        circleOptions: {
-                          fillColor: '#ffff00',
-                          fillOpacity: 1,
-                          strokeWeight: 5,
-                          clickable: false,
-                          editable: true,
-                          zIndex: 1
-                        }
+                        markerOptions: {icon: 'https://developers.google.com/maps/documentation/javascript/examples/full/images/beachflag.png'}
                     }
                 );
                 
                 this.drawingManager.setMap(this.map);
+
+                google.maps.event.addListener(this.drawingManager, 'overlaycomplete', function(event) {
+                  this.all_shapes.push(event);
+                  if (event.type == 'circle') {
+                    var radius = event.overlay.getRadius();
+                    console.log(radius);
+                  }
+                }.bind(this));
             }
             else{
+                for (var i=0; i < this.all_shapes.length; i++)
+                {
+                    this.all_shapes[i].overlay.setMap(null);
+                }
+                this.all_shapes = [];
                 this.drawingManager.setMap(null);
+                google.maps.event.clearListeners(this.drawingManager, 'overlaycomplete');
+            }
+        },
+
+        show_circle(){
+            if(this.selectedCircle){
+                this.circle = new google.maps.Circle({
+                    strokeColor: '#FF0000',
+                    strokeOpacity: 0.8,
+                    strokeWeight: 2,
+                    fillColor: '#FF0000',
+                    fillOpacity: 0.35,
+                    map: this.map,
+                    center: {lat: this.lattitud, lng: this.longitude},
+                    radius: this.radius,
+                    draggable: true
+                });
+            }
+            else{
+                this.circle.setMap(null);
+            }   
+        },
+
+        show_contains(){
+            if(this.selectedCircle){
+                for (var i=0; i < this.markers.length; i++){
+                    var contained = this.circle.getBounds().contains(this.markers[i].getPosition())
+                    if(contained){
+                        var lat = this.markers[i].getPosition().lat();
+                        var lng = this.markers[i].getPosition().lng();
+                        this.contained_markers.push({"title": this.markers[i].getTitle(), "lat": lat, "lng": lng});                   
+                    }
+                }
             }
         },
         
@@ -1388,7 +1475,7 @@ export default {
   },
 
   mounted: function () {
-    this.initMap();
+    google.maps.event.addDomListener(window, 'load', this.initMap);
   }
 };
 </script>

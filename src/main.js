@@ -7,7 +7,7 @@ import 'bootstrap/dist/css/bootstrap.css'
 import 'bootstrap-vue/dist/bootstrap-vue.css'
 
 Vue.config.productionTip = false
-
+window.$ = window.jQuery = require('jquery')
 Vue.use(BootstrapVue);
 
 /* eslint-disable no-new */

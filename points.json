@@ -1,0 +1,7 @@
+{
+data:
+	[
+		{text:"hola", lat: 2, lng: 3},
+		{text:"adios", lat: 5, lng: 9}
+	]
+}
