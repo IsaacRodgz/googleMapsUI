@@ -8,7 +8,16 @@
                         <b-card bg-variant="dark" text-variant="white" header="Tools" class="text-center">
                             <b-container>
                                 <div class="row">
-                                    <b-button :pressed.sync="selectedDistance" v-on:click="show_distance" variant="primary">Calculate distance</b-button>
+                                    <b-button :pressed.sync="selectedDistancefixed" v-on:click="show_distance_fixed" variant="primary">Distance fixed</b-button>
+                                    <b-form-input placeholder="Point A ID" v-model="pointA"></b-form-input>
+                                    <b-form-input placeholder="Point B ID" v-model="pointB"></b-form-input>
+                                    <b-list-group-item v-if="computedDistanceFixed" variant="dark">
+                                        {{ distance_fixed }} meters
+                                    </b-list-group-item>
+                                </div>
+                                <hr/>
+                                <div class="row">
+                                    <b-button :pressed.sync="selectedDistance" v-on:click="show_distance" variant="primary">Distance between points</b-button>
                                 </div>
                                 <hr/>
                                 <div class="row">
@@ -30,11 +39,9 @@
                     </b-card-group>
                 </div>
                 <div class="row">
-                    <b-list-group>
-                        <b-list-group-item v-for="layer in layers">
-                            {{ layer.name }}
-                        </b-list-group-item>
-                    </b-list-group>
+                    <b-button variant="danger" size="lg" v-for="layer in layers">
+                        {{ layer.name }}
+                    </b-button>
                 </div>
             </div>
 
@@ -77,12 +84,14 @@
                             header="Contained points"
                             class="text-center">
                         <b-row>
+                            <b-col>Id</b-col>
                             <b-col>Attribute</b-col>
                             <b-col>Latitude</b-col>
                             <b-col>Longitude</b-col>
                             <hr/>
                         </b-row>
                         <b-row v-for="item in contained_markers">
+                            <b-col>{{item.id}}</b-col>
                             <b-col>{{item.title}}</b-col>
                             <b-col>{{item.lat}}</b-col>
                             <b-col>{{item.lng}}</b-col>
@@ -109,6 +118,12 @@ export default {
       markers: [],
       contained_markers: [],
       fileName: '',
+      selectedDistancefixed: false,
+      pointA: null,
+      pointB: null,
+      distance_fixed: 0,
+      computedDistanceFixed: false,
+      geodesicBetween: 0,
       selectedDistance: false,
       selectedDrawing: false,
       selectedCircle: false,
@@ -122,7 +137,7 @@ export default {
       lattitud: 19.433941,
       longitude: -99.133563,
       circle: null,
-      radius: 1000,
+      radius: null,
       layers : [],
       mapStyle: [
           {
@@ -360,31 +375,13 @@ export default {
             }
             
             this.map = new google.maps.Map(element, options);
-
-            const vm = this;
-
-            $.ajax({
-              url: 'https://gist.githubusercontent.com/IsaacRodgz/c4882dad5b1e7fe3f4212fc2ef06b744/raw/732ece85c6016fea41301dbf33efa29612b9cb49/points.json',
-              method: 'GET', context: this
-            }).then(function(data) {
-                var myJson = $.parseJSON(data);
-                for (var index = 0; index < myJson.data.length; ++index) {
-                    var marker = new google.maps.Marker({
-                        position: {lat: myJson.data[index].lat, lng: myJson.data[index].lng},
-                        title: myJson.data[index].text,
-                        map: vm.map
-                    });
-                    vm.markers.push(marker);
-                }
-            });
-            
         },
 
         load_data(dir){
             if(dir == ''){
                 console.log("Directorio invalido");
             }
-            else{
+            else if(dir.split("/").slice(-1)[0].split(".")[1] == "kml"){
                 
                 var ctaLayer = new google.maps.KmlLayer({
                     url: dir,
@@ -392,6 +389,63 @@ export default {
                 });
                 this.fileName = '';
                 this.layers.push({"name":dir.split("/").slice(-1)[0]});
+            }
+            else if(dir.split("/").slice(-1)[0].split(".")[1] == "json"){
+                const vm = this;
+
+                $.ajax({
+                  url: dir,
+                  method: 'GET', context: this
+                }).then(function(data) {
+                    var myJson = $.parseJSON(data);
+                    for (var index = 0; index < myJson.data.length; ++index) {
+                        var marker = new google.maps.Marker({
+                            position: {lat: myJson.data[index].lat, lng: myJson.data[index].lng},
+                            title: myJson.data[index].text,
+                            label: (index+1).toString(),
+                            map: vm.map
+                        });
+                        vm.markers.push(marker);
+                    }
+                });
+                this.fileName = '';
+                this.layers.push({"name":dir.split("/").slice(-1)[0]});
+            }
+        },
+
+        show_distance_fixed(){
+            if(this.selectedDistancefixed){
+                var markerA = null;
+                var markerB = null;
+                for (var i = 0; i < this.markers.length; ++i) {
+                    var label = this.markers[i].getLabel()
+                    if(label === this.pointA || label === this.pointB){
+                        if(label === this.pointA){
+                            markerA = this.markers[i];
+                        }
+                        else if(label === this.pointB){
+                            markerB = this.markers[i];
+                        }
+                    }
+                }
+                this.distance_fixed = google.maps.geometry.spherical.computeDistanceBetween(markerA.getPosition(), markerB.getPosition()).toFixed(2)
+                this.computedDistanceFixed = true;
+                this.geodesicBetween = new google.maps.Polyline({
+                    strokeColor: '#CC0099',
+                    strokeOpacity: 1.0,
+                    strokeWeight: 3,
+                    geodesic: true,
+                    map: this.map
+                });
+                var path = [markerA.getPosition(), markerB.getPosition()];
+                this.geodesicBetween.setPath(path);
+            }
+            else{
+                this.geodesicBetween.setMap(null);
+                this.pointA = null;
+                this.pointB = null;
+                this.distance_fixed = 0;
+                this.computedDistanceFixed = false;
             }
         },
 
@@ -484,17 +538,19 @@ export default {
             }
             else{
                 this.circle.setMap(null);
+                this.radius = null;
             }   
         },
 
         show_contains(){
             if(this.selectedCircle){
+                this.contained_markers = [];
                 for (var i=0; i < this.markers.length; i++){
                     var contained = this.circle.getBounds().contains(this.markers[i].getPosition())
                     if(contained){
                         var lat = this.markers[i].getPosition().lat();
                         var lng = this.markers[i].getPosition().lng();
-                        this.contained_markers.push({"title": this.markers[i].getTitle(), "lat": lat, "lng": lng});                   
+                        this.contained_markers.push({"title": this.markers[i].getTitle(), "lat": lat, "lng": lng, "id": this.markers[i].getLabel()});                   
                     }
                 }
             }
@@ -1485,5 +1541,12 @@ export default {
   width: 750px;
   height: 520px;
   margin: 0 auto;
+}
+hr {
+    display: block;
+    border: 0;
+    border-top: 1px solid #ccc;
+    margin: 1em 0;
+    padding: 0; 
 }
 </style>
